@@ -1,0 +1,4 @@
+comment = 'CRF-based Named Entity Recognition for parsing names'
+default_version = '1.0.0'
+module_pathname = '$libdir/pg_probablepeople'
+relocatable = true
