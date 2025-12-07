@@ -12,3 +12,22 @@ AS '$libdir/pg_probablepeople', 'tag_name_crf'
 LANGUAGE C IMMUTABLE STRICT;
 COMMENT ON FUNCTION tag_name(text) IS 'Tag a name with its components using a CRF model';
 
+
+CREATE TYPE parsed_name AS (
+  prefix text,
+  given_name text,
+  middle_name text,
+  surname text,
+  suffix text,
+  nickname text,
+  corporation_name text,
+  corporation_type text,
+  organization text,
+  other text
+);
+
+CREATE FUNCTION parse_name_cols(input_text text)
+RETURNS parsed_name
+AS '$libdir/pg_probablepeople', 'parse_name_cols'
+LANGUAGE C IMMUTABLE STRICT;
+COMMENT ON FUNCTION parse_name_cols(text) IS 'Parse a name into standardized columns';

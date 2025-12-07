@@ -175,3 +175,107 @@ Datum tag_name_crf(PG_FUNCTION_ARGS) {
 
   PG_RETURN_JSONB_P(jb);
 }
+
+PG_FUNCTION_INFO_V1(parse_name_cols);
+Datum parse_name_cols(PG_FUNCTION_ARGS) {
+  text *input_text;
+  char *input_str;
+  CRFModel *model;
+  ParseResult *result;
+  ParsedNameCols *cols;
+  TupleDesc tupdesc;
+  Datum values[10];
+  bool nulls[10];
+  HeapTuple tuple;
+  int i;
+
+  if (PG_ARGISNULL(0))
+    PG_RETURN_NULL();
+
+  input_text = PG_GETARG_TEXT_PP(0);
+  input_str = text_to_cstring(input_text);
+
+  /* Get the generic model - directly use it for all name parsing */
+  model = get_active_model("generic");
+  if (model == NULL || !model->is_loaded) {
+    if (load_default_model() != CRF_SUCCESS) {
+      pfree(input_str);
+      ereport(ERROR, (errmsg("CRF model is not loaded")));
+    }
+    model = get_active_model("generic");
+  }
+
+  /* Fallback to person model if generic is still not available */
+  if (model == NULL || !model->is_loaded) {
+    model = get_active_model("person");
+  }
+
+  result = parse_name_string(input_str, model);
+  pfree(input_str);
+
+  if (result == NULL)
+    PG_RETURN_NULL();
+
+  cols = parse_name_to_cols(result);
+
+  /* Process result into Tuple */
+  if (get_call_result_type(fcinfo, NULL, &tupdesc) != TYPEFUNC_COMPOSITE) {
+    ereport(ERROR, (errcode(ERRCODE_FEATURE_NOT_SUPPORTED),
+                    errmsg("function returning record called in context "
+                           "that cannot accept type record")));
+  }
+
+  tupdesc = BlessTupleDesc(tupdesc);
+
+  /* Initialize nulls */
+  for (i = 0; i < 10; i++)
+    nulls[i] = true;
+
+  if (cols->prefix) {
+    values[0] = CStringGetTextDatum(cols->prefix);
+    nulls[0] = false;
+  }
+  if (cols->given_name) {
+    values[1] = CStringGetTextDatum(cols->given_name);
+    nulls[1] = false;
+  }
+  if (cols->middle_name) {
+    values[2] = CStringGetTextDatum(cols->middle_name);
+    nulls[2] = false;
+  }
+  if (cols->surname) {
+    values[3] = CStringGetTextDatum(cols->surname);
+    nulls[3] = false;
+  }
+  if (cols->suffix) {
+    values[4] = CStringGetTextDatum(cols->suffix);
+    nulls[4] = false;
+  }
+  if (cols->nickname) {
+    values[5] = CStringGetTextDatum(cols->nickname);
+    nulls[5] = false;
+  }
+  if (cols->corporation_name) {
+    values[6] = CStringGetTextDatum(cols->corporation_name);
+    nulls[6] = false;
+  }
+  if (cols->corporation_type) {
+    values[7] = CStringGetTextDatum(cols->corporation_type);
+    nulls[7] = false;
+  }
+  if (cols->organization) {
+    values[8] = CStringGetTextDatum(cols->organization);
+    nulls[8] = false;
+  }
+  if (cols->other) {
+    values[9] = CStringGetTextDatum(cols->other);
+    nulls[9] = false;
+  }
+
+  tuple = heap_form_tuple(tupdesc, values, nulls);
+
+  free_parsed_name_cols(cols);
+  /* result is freed by context cleanup */
+
+  PG_RETURN_DATUM(HeapTupleGetDatum(tuple));
+}

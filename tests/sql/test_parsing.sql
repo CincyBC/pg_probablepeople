@@ -38,5 +38,10 @@ SELECT token, label FROM parse_name('kam engineering inc.');
 -- Test 11: Test corporate name with organization
 SELECT token, label FROM parse_name('bipartisan sign co.');
 
+-- Test 12: Column-based parsing
+SELECT * FROM parse_name_cols('Mr. John Doe');
+SELECT * FROM parse_name_cols('Google Inc.');
+SELECT prefix, given_name, surname, suffix, corporation_name FROM parse_name_cols('Dr. Jane Smith PhD');
+
 -- Clean up
 DROP EXTENSION pg_probablepeople;

@@ -297,3 +297,101 @@ JsonbValue *parse_result_to_jsonb(ParseResult *result) {
 
   return json_result;
 }
+
+/*
+ * Helper to append a string to a destination string with a space separator
+ */
+static void append_name_component(char **dest, const char *src) {
+  if (src == NULL || strlen(src) == 0)
+    return;
+
+  if (*dest == NULL) {
+    *dest = pstrdup(src);
+  } else {
+    /* Append with space */
+    int old_len = strlen(*dest);
+    int new_len = old_len + 1 + strlen(src) + 1;
+    char *new_str = (char *)palloc(new_len);
+    snprintf(new_str, new_len, "%s %s", *dest, src);
+    pfree(*dest);
+    *dest = new_str;
+  }
+}
+
+/*
+ * Convert ParseResult to column-based structure
+ */
+ParsedNameCols *parse_name_to_cols(ParseResult *result) {
+  ParsedNameCols *cols;
+
+  if (result == NULL)
+    return NULL;
+
+  cols = (ParsedNameCols *)palloc0(sizeof(ParsedNameCols));
+
+  for (int i = 0; i < result->num_tokens; i++) {
+    char *label = result->tokens[i].label;
+    char *text = result->tokens[i].text;
+
+    if (strcmp(label, "PrefixMarital") == 0 ||
+        strcmp(label, "PrefixOther") == 0) {
+      append_name_component(&cols->prefix, text);
+    } else if (strcmp(label, "GivenName") == 0 ||
+               strcmp(label, "FirstInitial") == 0) {
+      append_name_component(&cols->given_name, text);
+    } else if (strcmp(label, "MiddleName") == 0 ||
+               strcmp(label, "MiddleInitial") == 0) {
+      append_name_component(&cols->middle_name, text);
+    } else if (strcmp(label, "Surname") == 0 ||
+               strcmp(label, "LastInitial") == 0) {
+      append_name_component(&cols->surname, text);
+    } else if (strcmp(label, "SuffixGenerational") == 0 ||
+               strcmp(label, "SuffixOther") == 0) {
+      append_name_component(&cols->suffix, text);
+    } else if (strcmp(label, "Nickname") == 0) {
+      append_name_component(&cols->nickname, text);
+    } else if (strcmp(label, "CorporationName") == 0 ||
+               strcmp(label, "ShortForm") == 0) {
+      append_name_component(&cols->corporation_name, text);
+    } else if (strcmp(label, "CorporationLegalType") == 0) {
+      append_name_component(&cols->corporation_type, text);
+    } else if (strcmp(label, "CorporationNameOrganization") == 0 ||
+               strcmp(label, "CorporationNameAndCompany") == 0 ||
+               strcmp(label, "CorporationCommitteeType") == 0 ||
+               strcmp(label, "CorporationNameBranchType") == 0 ||
+               strcmp(label, "CorporationNameBranchIdentifier") == 0) {
+      append_name_component(&cols->organization, text);
+    } else {
+      /* Everything else goes to 'other' */
+      append_name_component(&cols->other, text);
+    }
+  }
+
+  return cols;
+}
+
+void free_parsed_name_cols(ParsedNameCols *cols) {
+  if (cols == NULL)
+    return;
+  if (cols->prefix)
+    pfree(cols->prefix);
+  if (cols->given_name)
+    pfree(cols->given_name);
+  if (cols->middle_name)
+    pfree(cols->middle_name);
+  if (cols->surname)
+    pfree(cols->surname);
+  if (cols->suffix)
+    pfree(cols->suffix);
+  if (cols->nickname)
+    pfree(cols->nickname);
+  if (cols->corporation_name)
+    pfree(cols->corporation_name);
+  if (cols->corporation_type)
+    pfree(cols->corporation_type);
+  if (cols->organization)
+    pfree(cols->organization);
+  if (cols->other)
+    pfree(cols->other);
+  pfree(cols);
+}

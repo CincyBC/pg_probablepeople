@@ -106,5 +106,24 @@ SELECT token, label FROM parse_name('bipartisan sign co.');
  co         | CorporationNameOrganization
 (3 rows)
 
+-- Test 12: Column-based parsing
+SELECT * FROM parse_name_cols('Mr. John Doe');
+ prefix | given_name | middle_name | surname | suffix | nickname | corporation_name | corporation_type | organization | other 
+--------+------------+-------------+---------+--------+----------+------------------+------------------+--------------+-------
+ Mr.    | John       |             | Doe     |        |          |                  |                  |              | 
+(1 row)
+
+SELECT * FROM parse_name_cols('Google Inc.');
+ prefix | given_name | middle_name | surname | suffix | nickname | corporation_name | corporation_type | organization | other 
+--------+------------+-------------+---------+--------+----------+------------------+------------------+--------------+-------
+        |            |             |         |        |          | Google           | Inc.             |              | 
+(1 row)
+
+SELECT prefix, given_name, surname, suffix, corporation_name FROM parse_name_cols('Dr. Jane Smith PhD');
+ prefix | given_name | surname | suffix | corporation_name 
+--------+------------+---------+--------+------------------
+ Dr.    | Jane       | Smith   | PhD    | 
+(1 row)
+
 -- Clean up
 DROP EXTENSION pg_probablepeople;
