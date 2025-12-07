@@ -1,8 +1,6 @@
 /* src/crfsuite_wrapper.c */
 #include "postgres.h"
 /* Postgres headers must come first */
-#include "catalog/pg_type.h"
-#include "executor/spi.h"
 #include "fmgr.h"
 #include "miscadmin.h"
 #include "utils/builtins.h"
@@ -14,7 +12,6 @@
 #include <string.h>
 #include <unistd.h>
 
-/* Global model instance */
 /* Global model instances */
 static CRFModel *person_model = NULL;
 static CRFModel *company_model = NULL;
@@ -60,14 +57,9 @@ CRFErrorCode load_model_from_bytea(CRFModel *model, const char *model_data,
   }
 
   /* Load model from memory directly using CRFSuite API */
-  /* Note: crfsuite_create_instance_from_memory might require aligned memory or
-     specific flags? Standard libcrfsuite supports it. */
   ret = crfsuite_create_instance_from_memory(model_data, data_size,
                                              (void **)&model->model);
   if (ret != 0 || model->model == NULL) {
-    /* Try temp file fallback if memory load fails (some versions might not
-     * support it) */
-    /* But for now assumes it works as we vendored master */
     return CRF_ERROR_MODEL_LOAD;
   }
 
@@ -102,16 +94,12 @@ CRFErrorCode predict_sequence(CRFModel *model, crfsuite_instance_t *instance,
 
   /* Set instance for tagging */
   ret = tagger->set(tagger, instance);
-  /* Allocate memory for label sequence */
 
   if (ret != 0) {
     tagger->release(tagger);
     return CRF_ERROR_PREDICTION;
   }
 
-  // tagger->length(tagger) returns int.
-  // Wait, instance structure has num_items?
-  // instance->num_items exists.
   num_items = instance->num_items;
 
   *labels = (int *)palloc(num_items * sizeof(int));
@@ -133,136 +121,6 @@ CRFErrorCode predict_sequence(CRFModel *model, crfsuite_instance_t *instance,
   return CRF_SUCCESS;
 }
 
-/*
- * Load model from database by name
- */
-/*
- * Load model by type ("person" or "company")
- */
-CRFErrorCode load_model_from_database(const char *model_type) {
-  int ret;
-  SPITupleTable *tuptable;
-  TupleDesc tupdesc;
-  char query[512];
-  Datum model_data_datum;
-  bool isnull;
-  bytea *model_bytea;
-  char *model_data;
-  size_t data_size;
-  MemoryContext oldContext;
-  char *storable_data;
-  CRFErrorCode load_result;
-  char *db_version;
-  char *db_name;
-  CRFModel **target_model;
-
-  if (strcmp(model_type, "person") == 0) {
-    target_model = &person_model;
-  } else if (strcmp(model_type, "company") == 0) {
-    target_model = &company_model;
-  } else if (strcmp(model_type, "generic") == 0) {
-    target_model = &generic_model;
-  } else {
-    return CRF_ERROR_INVALID_MODEL;
-  }
-
-  if (SPI_connect() != SPI_OK_CONNECT) {
-    ereport(ERROR, (errcode(ERRCODE_CONNECTION_FAILURE),
-                    errmsg("Failed to connect to SPI")));
-    return CRF_ERROR_DATABASE;
-  }
-
-  snprintf(query, sizeof(query),
-           "SELECT model_data, name, version FROM crfname_ner.crf_models "
-           "WHERE name = '%s' LIMIT 1",
-           model_type);
-
-  ret = SPI_execute(query, true, 1);
-  if (ret != SPI_OK_SELECT) {
-    SPI_finish();
-    ereport(ERROR, (errcode(ERRCODE_SQL_STATEMENT_NOT_YET_COMPLETE),
-                    errmsg("Failed to execute model query")));
-    return CRF_ERROR_DATABASE;
-  }
-
-  if (SPI_processed == 0) {
-    SPI_finish();
-    ereport(WARNING, (errmsg("No CRF model found: %s",
-                             model_type ? model_type : "active model")));
-    return CRF_ERROR_MODEL_LOAD;
-  }
-
-  tuptable = SPI_tuptable;
-  tupdesc = tuptable->tupdesc;
-
-  /* Extract model data */
-  model_data_datum = SPI_getbinval(tuptable->vals[0], tupdesc, 1, &isnull);
-  if (isnull) {
-    SPI_finish();
-    return CRF_ERROR_INVALID_MODEL;
-  }
-
-  model_bytea = DatumGetByteaP(model_data_datum);
-  data_size = VARSIZE(model_bytea) - VARHDRSZ;
-  model_data = VARDATA(model_bytea);
-
-  /* Free existing model if any */
-  if (*target_model != NULL) {
-    free_crf_model(*target_model);
-  }
-
-  /* Create new model */
-  *target_model = create_crf_model();
-  if (*target_model == NULL) {
-    SPI_finish();
-    return CRF_ERROR_MEMORY;
-  }
-
-  /* Load model data */
-  /* Note: Model data must be copied potentially if default memory context is
-     used, but create_crf_instance_from_memory might copy? Actually libcrfsuite
-     from memory usually maps it. So we might need to keep model_bytea around in
-      crf_memory_context. If we load from DB, the SPI data is freed after
-     SPI_finish. So we definitely need to copy the data to our context. */
-
-  oldContext = MemoryContextSwitchTo(crf_memory_context);
-  storable_data = palloc(data_size);
-  memcpy(storable_data, model_data, data_size);
-  MemoryContextSwitchTo(oldContext);
-
-  load_result = load_model_from_bytea(*target_model, storable_data, data_size);
-
-  if (load_result != CRF_SUCCESS) {
-    /* pfree(storable_data); // should free */
-    free_crf_model(*target_model);
-    *target_model = NULL;
-    SPI_finish();
-    return load_result;
-  }
-
-  /* Set model metadata */
-
-  if (model_type) {
-    (*target_model)->model_name = pstrdup(model_type);
-  } else {
-    db_name = SPI_getvalue(tuptable->vals[0], tupdesc, 2);
-    (*target_model)->model_name = pstrdup(db_name);
-  }
-
-  db_version = SPI_getvalue(tuptable->vals[0], tupdesc, 3);
-  (*target_model)->version = pstrdup(db_version);
-
-  SPI_finish();
-
-  ereport(LOG, (errmsg("Successfully loaded CRF model: %s (version %s)",
-                       (*target_model)->model_name, (*target_model)->version)));
-
-  return CRF_SUCCESS;
-}
-
-/*
- * Load CRF model from file
- */
 /*
  * Load model by type from file
  */
@@ -327,22 +185,16 @@ CRFErrorCode load_default_model(void) {
   snprintf(model_path, MAXPGPATH,
            "%s/extension/person_learned_settings.crfsuite", sharepath);
   res_person = load_model_from_file(model_path, "person");
-  if (res_person != CRF_SUCCESS)
-    res_person = load_model_from_database("person");
 
   /* Load Company Model */
   snprintf(model_path, MAXPGPATH,
            "%s/extension/company_learned_settings.crfsuite", sharepath);
   res_company = load_model_from_file(model_path, "company");
-  if (res_company != CRF_SUCCESS)
-    res_company = load_model_from_database("company");
 
   /* Load Generic Model */
   snprintf(model_path, MAXPGPATH,
            "%s/extension/generic_learned_settings.crfsuite", sharepath);
   res_generic = load_model_from_file(model_path, "generic");
-  if (res_generic != CRF_SUCCESS)
-    res_generic = load_model_from_database("generic");
 
   if (res_person == CRF_SUCCESS || res_company == CRF_SUCCESS ||
       res_generic == CRF_SUCCESS)
@@ -373,18 +225,6 @@ void free_crf_model(CRFModel *model) {
   if (model->model != NULL) {
     model->model->release(model->model);
   }
-
-  /* Dictionaries are owned by model?
-     Usually yes, or they are just interfaces.
-     If we called release on labels/attrs, it might be double free if model
-     release does it. Doc says: "Obtain the pointer to crfsuite_dictionary_t
-     interface". Usually get_labels increments refcount? If so, we should
-     release. Let's check addref/release in header. If get_labels increments, we
-     should release. If not, we shouldn't. Doc says "obtain the pointer...".
-     Usually implies reference.
-     But looking at libcrfsuite source would verify.
-     Safest to assume model release handles its internals, or we release what we
-     got. Let's attempt to release them if non-null. */
 
   if (model->labels != NULL) {
     model->labels->release(model->labels);
@@ -431,9 +271,6 @@ void free_parse_result(ParseResult *result) {
   pfree(result);
 }
 
-/*
- * Get model size by name
- */
 /*
  * Get model size by type
  */

@@ -73,9 +73,9 @@ SELECT token, label FROM parse_name('Dr. Hugh F Smission Jr.');
 
 -- Test 8: Parse name with title
 SELECT token, label FROM parse_name('President Joe Biden');
-   token   |   label   
------------+-----------
- President | Surname
+   token   |    label    
+-----------+-------------
+ President | PrefixOther
  Joe       | GivenName
  Biden     | Surname
 (3 rows)

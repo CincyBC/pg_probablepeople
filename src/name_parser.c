@@ -1,8 +1,6 @@
 /* src/name_parser.c */
 #include "postgres.h"
 /* Postgres headers first */
-#include "catalog/pg_type.h"
-#include "executor/spi.h"
 #include "utils/builtins.h"
 #include "utils/json.h"
 #include "utils/jsonb.h"
@@ -117,12 +115,6 @@ ParseResult *parse_name_string(const char *input_text, CRFModel *model) {
 
   gettimeofday(&start_time, NULL);
 
-  /* Check cache first */
-  result = get_cached_result(input_text);
-  if (result != NULL) {
-    return result;
-  }
-
   /* Tokenize input */
   tokens = tokenize_name_string(input_text, &num_tokens);
   if (tokens == NULL || num_tokens == 0) {
@@ -165,12 +157,6 @@ ParseResult *parse_name_string(const char *input_text, CRFModel *model) {
   gettimeofday(&end_time, NULL);
   result->processing_time_ms = (end_time.tv_sec - start_time.tv_sec) * 1000 +
                                (end_time.tv_usec - start_time.tv_usec) / 1000;
-
-  /* Cache result */
-  cache_parse_result(input_text, result);
-
-  /* Update statistics */
-  update_parsing_stats(input_text, result);
 
   /* Cleanup */
   pfree(predicted_labels);
@@ -310,113 +296,4 @@ JsonbValue *parse_result_to_jsonb(ParseResult *result) {
   json_result = pushJsonbValue(&state, WJB_END_OBJECT, NULL);
 
   return json_result;
-}
-
-/*
- * Cache parse result in database
- */
-bool cache_parse_result(const char *input_text, ParseResult *result) {
-  char query[1024];
-  JsonbValue *json_val;
-  Jsonb *jb = NULL;
-  int ret;
-
-  if (input_text == NULL || result == NULL)
-    return false;
-
-  /* Check if caching is enabled */
-  if (SPI_connect() != SPI_OK_CONNECT) {
-    return false;
-  }
-
-  ret = SPI_execute("SELECT value FROM crfname_ner.crf_config WHERE parameter "
-                    "= 'cache_enabled'",
-                    true, 1);
-  if (ret != SPI_OK_SELECT || SPI_processed == 0) {
-    SPI_finish();
-    return false;
-  }
-
-  char *cache_enabled;
-
-  cache_enabled = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
-  if (strcmp(cache_enabled, "true") != 0) {
-    SPI_finish();
-    return false;
-  }
-
-  /* Convert result to JSON */
-  json_val = parse_result_to_jsonb(result);
-  if (json_val == NULL) {
-    SPI_finish();
-    return false;
-  }
-
-  /* Key fix: Convert JsonbValue to Jsonb (varlena) for conversion to
-   * string/usage */
-  jb = JsonbValueToJsonb(json_val);
-
-  /* Insert into cache table */
-  snprintf(query, sizeof(query),
-           "INSERT INTO crfname_ner.parsed_names "
-           "(original_text, parsed_components, confidence_scores, "
-           "model_version, processing_time_ms) "
-           "VALUES ('%s', '%s', NULL, '%s', %d) "
-           "ON CONFLICT (original_text) DO UPDATE SET "
-           "parsed_components = EXCLUDED.parsed_components, "
-           "model_version = EXCLUDED.model_version, "
-           "processing_time_ms = EXCLUDED.processing_time_ms, "
-           "created_at = CURRENT_TIMESTAMP",
-           input_text, JsonbToCString(NULL, &jb->root, VARSIZE(jb)),
-           result->model_version, result->processing_time_ms);
-
-  ret = SPI_execute(query, false, 0);
-  SPI_finish();
-
-  return (ret == SPI_OK_INSERT || ret == SPI_OK_UPDATE);
-}
-
-/*
- * Get cached parse result
- */
-ParseResult *get_cached_result(const char *input_text) {
-  char query[512];
-  int ret;
-  SPITupleTable *tuptable;
-  TupleDesc tupdesc;
-
-  if (input_text == NULL)
-    return NULL;
-
-  if (SPI_connect() != SPI_OK_CONNECT) {
-    return NULL;
-  }
-
-  snprintf(query, sizeof(query),
-           "SELECT parsed_components, model_version, processing_time_ms "
-           "FROM crfname_ner.parsed_names "
-           "WHERE original_text = '%s' "
-           "AND created_at > NOW() - INTERVAL '24 hours'",
-           input_text);
-
-  ret = SPI_execute(query, true, 1);
-  if (ret != SPI_OK_SELECT || SPI_processed == 0) {
-    SPI_finish();
-    return NULL;
-  }
-
-  /* For now, return NULL - full cache implementation would deserialize JSON */
-  SPI_finish();
-  return NULL;
-}
-
-/*
- * Update parsing statistics
- */
-void update_parsing_stats(const char *input_text, ParseResult *result) {
-  /* This could update performance metrics, usage statistics, etc. */
-  /* For now, just log successful parsing */
-  ereport(DEBUG1,
-          (errmsg("Parsed name '%s' with confidence %.2f in %d ms", input_text,
-                  result->overall_confidence, result->processing_time_ms)));
 }
