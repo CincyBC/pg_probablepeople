@@ -80,6 +80,90 @@ SELECT tag_name('Mr. John Doe');
 {"GivenName": "John", "Surname": "Doe", "PrefixMarital": "Mr."}
 ```
 
+## Training Models
+
+The extension includes a C-based training tool that allows you to retrain the CRF models with custom data. This is useful when you encounter names that are mislabeled or when you want to add support for new naming patterns.
+
+### Training Data Format
+
+Training data is stored in XML files in the `name_data/` directory:
+- **`person_labeled.xml`**: Person name examples (GivenName, Surname, MiddleName, Prefix, Suffix, etc.)
+- **`company_labeled.xml`**: Company name examples (CorporationName, CorporationLegalType, etc.)
+
+**XML Format Example:**
+```xml
+<NameCollection>
+  <Name><PrefixOther>President</PrefixOther> <GivenName>Joe</GivenName> <Surname>Biden</Surname></Name>
+  <Name><CorporationName>Google</CorporationName> <CorporationLegalType>Inc.</CorporationLegalType></Name>
+</NameCollection>
+```
+
+### Common Label Types
+
+**Person Names:**
+- `GivenName`, `Surname`, `MiddleName`, `MiddleInitial`
+- `PrefixMarital` (Mr., Mrs., Ms.), `PrefixOther` (Dr., President)
+- `SuffixGenerational` (Jr., Sr., III), `SuffixOther` (Esq., PhD)
+
+**Company Names:**
+- `CorporationName`, `CorporationLegalType` (Inc., LLC, Corp.)
+- `CorporationNameOrganization` (Corporation, Company, Group)
+
+### Adding New Training Examples
+
+When you encounter a mislabeled name:
+
+1. **Add examples to the training data:**
+   ```bash
+   # Edit the appropriate XML file
+   vim name_data/person_labeled.xml
+   # or
+   vim name_data/company_labeled.xml
+   ```
+
+2. **Add 3-5 similar examples** to give the model enough signal to learn the pattern.
+
+### Training the Model
+
+**Inside Docker (Recommended):**
+
+```bash
+# 1. Copy updated training data to container
+docker cp name_data/person_labeled.xml pg_probablepeople-db-1:/usr/src/pg_probablepeople/name_data/
+docker cp name_data/company_labeled.xml pg_probablepeople-db-1:/usr/src/pg_probablepeople/name_data/
+
+# 2. Build training tool and train the generic model
+docker exec pg_probablepeople-db-1 bash -c "cd /usr/src/pg_probablepeople && \
+  make -f Makefile.training training-tool && \
+  ./train_model -t generic -p name_data/person_labeled.xml -c name_data/company_labeled.xml -o generic_learned_settings.crfsuite && \
+  make install && \
+  psql -U postgres -c 'DROP EXTENSION IF EXISTS pg_probablepeople CASCADE; CREATE EXTENSION pg_probablepeople;'"
+
+# 3. Copy trained model back to host (for version control)
+docker cp pg_probablepeople-db-1:/usr/src/pg_probablepeople/generic_learned_settings.crfsuite ./generic_learned_settings.crfsuite
+```
+
+**Training Options:**
+- `-t generic`: Train a unified model for both person and company names (recommended)
+- `-t person`: Train person-only model
+- `-t company`: Train company-only model
+- `-p <file>`: Person training data XML
+- `-c <file>`: Company training data XML
+- `-o <file>`: Output model file
+
+**Example: Train person-only model:**
+```bash
+./train_model name_data/person_labeled.xml -o person_learned_settings.crfsuite
+```
+
+### Workflow Summary
+
+1. Encounter mislabeled name → Add examples to XML
+2. Copy updated XML to container
+3. Rebuild and retrain model
+4. Test the new model
+5. Copy model back to host and commit changes
+
 ## Testing
 
 To run the regression test suite within the Docker container:

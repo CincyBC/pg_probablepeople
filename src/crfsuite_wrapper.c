@@ -15,7 +15,10 @@
 #include <unistd.h>
 
 /* Global model instance */
-static CRFModel *global_model = NULL;
+/* Global model instances */
+static CRFModel *person_model = NULL;
+static CRFModel *company_model = NULL;
+static CRFModel *generic_model = NULL;
 extern MemoryContext crf_memory_context;
 
 /*
@@ -133,7 +136,10 @@ CRFErrorCode predict_sequence(CRFModel *model, crfsuite_instance_t *instance,
 /*
  * Load model from database by name
  */
-CRFErrorCode load_model_from_database(const char *model_name) {
+/*
+ * Load model by type ("person" or "company")
+ */
+CRFErrorCode load_model_from_database(const char *model_type) {
   int ret;
   SPITupleTable *tuptable;
   TupleDesc tupdesc;
@@ -147,7 +153,18 @@ CRFErrorCode load_model_from_database(const char *model_name) {
   char *storable_data;
   CRFErrorCode load_result;
   char *db_version;
-  char *db_name; /* Moved declaration to top of function */
+  char *db_name;
+  CRFModel **target_model;
+
+  if (strcmp(model_type, "person") == 0) {
+    target_model = &person_model;
+  } else if (strcmp(model_type, "company") == 0) {
+    target_model = &company_model;
+  } else if (strcmp(model_type, "generic") == 0) {
+    target_model = &generic_model;
+  } else {
+    return CRF_ERROR_INVALID_MODEL;
+  }
 
   if (SPI_connect() != SPI_OK_CONNECT) {
     ereport(ERROR, (errcode(ERRCODE_CONNECTION_FAILURE),
@@ -155,17 +172,10 @@ CRFErrorCode load_model_from_database(const char *model_name) {
     return CRF_ERROR_DATABASE;
   }
 
-  /* Query for active model or specific model */
-  if (model_name == NULL) {
-    snprintf(query, sizeof(query),
-             "SELECT model_data, name, version FROM crfname_ner.crf_models "
-             "WHERE is_active = TRUE LIMIT 1");
-  } else {
-    snprintf(query, sizeof(query),
-             "SELECT model_data, name, version FROM crfname_ner.crf_models "
-             "WHERE name = '%s' LIMIT 1",
-             model_name);
-  }
+  snprintf(query, sizeof(query),
+           "SELECT model_data, name, version FROM crfname_ner.crf_models "
+           "WHERE name = '%s' LIMIT 1",
+           model_type);
 
   ret = SPI_execute(query, true, 1);
   if (ret != SPI_OK_SELECT) {
@@ -178,7 +188,7 @@ CRFErrorCode load_model_from_database(const char *model_name) {
   if (SPI_processed == 0) {
     SPI_finish();
     ereport(WARNING, (errmsg("No CRF model found: %s",
-                             model_name ? model_name : "active model")));
+                             model_type ? model_type : "active model")));
     return CRF_ERROR_MODEL_LOAD;
   }
 
@@ -197,13 +207,13 @@ CRFErrorCode load_model_from_database(const char *model_name) {
   model_data = VARDATA(model_bytea);
 
   /* Free existing model if any */
-  if (global_model != NULL) {
-    free_crf_model(global_model);
+  if (*target_model != NULL) {
+    free_crf_model(*target_model);
   }
 
   /* Create new model */
-  global_model = create_crf_model();
-  if (global_model == NULL) {
+  *target_model = create_crf_model();
+  if (*target_model == NULL) {
     SPI_finish();
     return CRF_ERROR_MEMORY;
   }
@@ -220,32 +230,32 @@ CRFErrorCode load_model_from_database(const char *model_name) {
   memcpy(storable_data, model_data, data_size);
   MemoryContextSwitchTo(oldContext);
 
-  load_result = load_model_from_bytea(global_model, storable_data, data_size);
+  load_result = load_model_from_bytea(*target_model, storable_data, data_size);
 
   if (load_result != CRF_SUCCESS) {
     /* pfree(storable_data); // should free */
-    free_crf_model(global_model);
-    global_model = NULL;
+    free_crf_model(*target_model);
+    *target_model = NULL;
     SPI_finish();
     return load_result;
   }
 
   /* Set model metadata */
 
-  if (model_name) {
-    global_model->model_name = pstrdup(model_name);
+  if (model_type) {
+    (*target_model)->model_name = pstrdup(model_type);
   } else {
     db_name = SPI_getvalue(tuptable->vals[0], tupdesc, 2);
-    global_model->model_name = pstrdup(db_name);
+    (*target_model)->model_name = pstrdup(db_name);
   }
 
   db_version = SPI_getvalue(tuptable->vals[0], tupdesc, 3);
-  global_model->version = pstrdup(db_version);
+  (*target_model)->version = pstrdup(db_version);
 
   SPI_finish();
 
   ereport(LOG, (errmsg("Successfully loaded CRF model: %s (version %s)",
-                       global_model->model_name, global_model->version)));
+                       (*target_model)->model_name, (*target_model)->version)));
 
   return CRF_SUCCESS;
 }
@@ -253,35 +263,50 @@ CRFErrorCode load_model_from_database(const char *model_name) {
 /*
  * Load CRF model from file
  */
-CRFErrorCode load_model_from_file(const char *filename) {
+/*
+ * Load model by type from file
+ */
+CRFErrorCode load_model_from_file(const char *filename,
+                                  const char *model_type) {
   int ret;
-  CRFModel *model;
+  CRFModel **target_model;
 
-  if (global_model != NULL) {
-    free_crf_model(global_model);
+  if (strcmp(model_type, "person") == 0) {
+    target_model = &person_model;
+  } else if (strcmp(model_type, "company") == 0) {
+    target_model = &company_model;
+  } else if (strcmp(model_type, "generic") == 0) {
+    target_model = &generic_model;
+  } else {
+    return CRF_ERROR_INVALID_MODEL;
   }
 
-  global_model = create_crf_model();
-  if (global_model == NULL) {
+  if (*target_model != NULL) {
+    free_crf_model(*target_model);
+  }
+
+  *target_model = create_crf_model();
+  if (*target_model == NULL) {
     return CRF_ERROR_MEMORY;
   }
 
-  model = global_model;
-
   /* Load model from file */
-  ret = crfsuite_create_instance_from_file(filename, (void **)&model->model);
-  if (ret != 0 || model->model == NULL) {
+  ret = crfsuite_create_instance_from_file(filename,
+                                           (void **)&(*target_model)->model);
+  if (ret != 0 || (*target_model)->model == NULL) {
     /* Failed to open */
     return CRF_ERROR_MODEL_LOAD;
   }
 
   /* Get label and attribute dictionaries */
-  model->model->get_labels(model->model, &model->labels);
-  model->model->get_attrs(model->model, &model->attrs);
+  (*target_model)
+      ->model->get_labels((*target_model)->model, &(*target_model)->labels);
+  (*target_model)
+      ->model->get_attrs((*target_model)->model, &(*target_model)->attrs);
 
-  model->is_loaded = true;
-  model->model_name = pstrdup("default");
-  model->version = pstrdup("1.0");
+  (*target_model)->is_loaded = true;
+  (*target_model)->model_name = pstrdup(model_type);
+  (*target_model)->version = pstrdup("1.0");
 
   ereport(LOG, (errmsg("Loaded CRF model from %s", filename)));
 
@@ -289,28 +314,54 @@ CRFErrorCode load_model_from_file(const char *filename) {
 }
 
 /*
- * Load default active model
+ * Load default active models
  */
 CRFErrorCode load_default_model(void) {
   char sharepath[MAXPGPATH];
   char model_path[MAXPGPATH];
+  CRFErrorCode res_person, res_company, res_generic;
 
   get_share_path(my_exec_path, sharepath);
+
+  /* Load Person Model */
   snprintf(model_path, MAXPGPATH,
            "%s/extension/person_learned_settings.crfsuite", sharepath);
+  res_person = load_model_from_file(model_path, "person");
+  if (res_person != CRF_SUCCESS)
+    res_person = load_model_from_database("person");
 
-  if (load_model_from_file(model_path) == CRF_SUCCESS) {
+  /* Load Company Model */
+  snprintf(model_path, MAXPGPATH,
+           "%s/extension/company_learned_settings.crfsuite", sharepath);
+  res_company = load_model_from_file(model_path, "company");
+  if (res_company != CRF_SUCCESS)
+    res_company = load_model_from_database("company");
+
+  /* Load Generic Model */
+  snprintf(model_path, MAXPGPATH,
+           "%s/extension/generic_learned_settings.crfsuite", sharepath);
+  res_generic = load_model_from_file(model_path, "generic");
+  if (res_generic != CRF_SUCCESS)
+    res_generic = load_model_from_database("generic");
+
+  if (res_person == CRF_SUCCESS || res_company == CRF_SUCCESS ||
+      res_generic == CRF_SUCCESS)
     return CRF_SUCCESS;
-  }
-
-  /* Fallback to database */
-  return load_model_from_database(NULL);
+  return CRF_ERROR_MODEL_LOAD;
 }
 
 /*
  * Get the currently active model
  */
-CRFModel *get_active_model(void) { return global_model; }
+CRFModel *get_active_model(const char *type) {
+  if (type == NULL || strcmp(type, "person") == 0)
+    return person_model;
+  if (strcmp(type, "company") == 0)
+    return company_model;
+  if (strcmp(type, "generic") == 0)
+    return generic_model;
+  return NULL;
+}
 
 /*
  * Free CRF model resources
@@ -383,10 +434,17 @@ void free_parse_result(ParseResult *result) {
 /*
  * Get model size by name
  */
-size_t get_model_size(const char *model_name) {
-  if (global_model != NULL && global_model->model_name != NULL &&
-      strcmp(global_model->model_name, model_name) == 0) {
-    return global_model->model_size;
+/*
+ * Get model size by type
+ */
+size_t get_model_size(const char *model_type) {
+  CRFModel *model;
+  if (model_type == NULL)
+    return 0;
+
+  model = get_active_model(model_type);
+  if (model != NULL && model->is_loaded) {
+    return model->model_size;
   }
   return 0;
 }

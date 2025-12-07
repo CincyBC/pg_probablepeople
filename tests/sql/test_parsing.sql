@@ -24,10 +24,19 @@ SELECT token, label FROM parse_name('John Doe Esq.');
 SELECT token, label FROM parse_name('John Doe III');
 
 -- Test 7: Parse with prefix and suffix
-SELECT token, label FROM parse_name('Dr. Hugh F Smission Jr.')
+SELECT token, label FROM parse_name('Dr. Hugh F Smission Jr.');
 
 -- Test 8: Parse name with title
 SELECT token, label FROM parse_name('President Joe Biden');
+
+-- Test 9: Test corporate name
+SELECT token, label FROM parse_name('Google Inc.');
+
+-- Test 10: Test corporate name with suffix
+SELECT token, label FROM parse_name('kam engineering inc.');
+
+-- Test 11: Test corporate name with organization
+SELECT token, label FROM parse_name('bipartisan sign co.');
 
 -- Clean up
 DROP EXTENSION pg_probablepeople;

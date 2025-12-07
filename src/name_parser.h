@@ -2,9 +2,9 @@
 #ifndef NAME_PARSER_H
 #define NAME_PARSER_H
 
-#include "postgres.h"
 #include "crfsuite_wrapper.h"
 #include "feature_extractor.h"
+#include "postgres.h"
 
 /* Name parsing functions */
 ParseResult *parse_name_string(const char *input_text, CRFModel *model);

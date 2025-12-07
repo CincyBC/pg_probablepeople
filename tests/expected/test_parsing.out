@@ -44,11 +44,11 @@ SELECT * FROM parse_name(NULL);
 
 -- Test 5: Parse with suffix
 SELECT token, label FROM parse_name('John Doe Esq.');
- token |   label    
--------+------------
+ token |    label    
+-------+-------------
  John  | GivenName
- Doe   | MiddleName
- Esq.  | Surname
+ Doe   | Surname
+ Esq.  | SuffixOther
 (3 rows)
 
 -- Test 6: Parse with generational suffix
@@ -66,18 +66,44 @@ SELECT token, label FROM parse_name('Dr. Hugh F Smission Jr.');
 ----------+--------------------
  Dr.      | PrefixOther
  Hugh     | GivenName
- F        | MiddleName
+ F        | MiddleInitial
  Smission | Surname
  Jr.      | SuffixGenerational
 (5 rows)
 
 -- Test 8: Parse name with title
 SELECT token, label FROM parse_name('President Joe Biden');
- token   |       label        
----------+----------------------
- President | Title
- Joe     | GivenName
- Biden   | Surname
+   token   |   label   
+-----------+-----------
+ President | Surname
+ Joe       | GivenName
+ Biden     | Surname
+(3 rows)
+
+-- Test 9: Test corporate name
+SELECT token, label FROM parse_name('google inc.');
+ token  |        label         
+--------+----------------------
+ google | CorporationName
+ inc    | CorporationLegalType
+(2 rows)
+
+-- Test 10: Test corporate name with suffix
+SELECT token, label FROM parse_name('kam engineering inc.');
+    token    |        label         
+-------------+----------------------
+ kam         | CorporationName
+ engineering | CorporationName
+ inc         | CorporationLegalType
+(3 rows)
+
+-- Test 11: Test corporate name with organization
+SELECT token, label FROM parse_name('bipartisan sign co.');
+   token    |            label            
+------------+-----------------------------
+ bipartisan | CorporationName
+ sign       | CorporationName
+ co         | CorporationNameOrganization
 (3 rows)
 
 -- Clean up

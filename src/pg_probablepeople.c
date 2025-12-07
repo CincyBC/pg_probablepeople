@@ -60,16 +60,20 @@ Datum parse_name_crf(PG_FUNCTION_ARGS) {
     input_text = PG_GETARG_TEXT_PP(0);
     input_str = text_to_cstring(input_text);
 
-    /* Get model - ensure it is loaded */
-    model = get_active_model();
+    /* Get the generic model - directly use it for all name parsing */
+    model = get_active_model("generic");
     if (model == NULL || !model->is_loaded) {
-      /* Try loading again if missing */
       if (load_default_model() != CRF_SUCCESS) {
         pfree(input_str);
         MemoryContextSwitchTo(oldcontext);
         ereport(ERROR, (errmsg("CRF model is not loaded")));
       }
-      model = get_active_model();
+      model = get_active_model("generic");
+    }
+
+    /* Fallback to person model if generic is still not available */
+    if (model == NULL || !model->is_loaded) {
+      model = get_active_model("person");
     }
 
     /* Parse name using specific model */
@@ -141,13 +145,19 @@ Datum tag_name_crf(PG_FUNCTION_ARGS) {
   input_text = PG_GETARG_TEXT_PP(0);
   input_str = text_to_cstring(input_text);
 
-  model = get_active_model();
+  /* Get the generic model - directly use it for all name parsing */
+  model = get_active_model("generic");
   if (model == NULL || !model->is_loaded) {
     if (load_default_model() != CRF_SUCCESS) {
       pfree(input_str);
       ereport(ERROR, (errmsg("CRF model is not loaded")));
     }
-    model = get_active_model();
+    model = get_active_model("generic");
+  }
+
+  /* Fallback to person model if generic is still not available */
+  if (model == NULL || !model->is_loaded) {
+    model = get_active_model("person");
   }
 
   result = parse_name_string(input_str, model);

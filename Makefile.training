@@ -1,0 +1,44 @@
+# Makefile for standalone training tool
+# This is separate from PGXS to avoid PostgreSQL dependencies
+
+CC = gcc
+CFLAGS = -Wall -g -O2 -Isrc/crfsuite/include -Isrc/crfsuite/src -Isrc
+
+# CRFSuite sources (including training)
+CRFSUITE_SRCS = $(wildcard src/crfsuite/src/*.c)
+# Exclude files that require external dependencies or have their own main()
+CRFSUITE_EXCLUDE = src/crfsuite/src/train_arow.c src/crfsuite/src/train_averaged_perceptron.c \
+                   src/crfsuite/src/train_lbfgs.c src/crfsuite/src/train_passive_aggressive.c \
+                   src/crfsuite/src/stub_train.c src/crfsuite/src/main.c
+CRFSUITE_OBJS = $(filter-out $(patsubst %.c,%.o,$(CRFSUITE_EXCLUDE)), $(patsubst %.c,%.o,$(CRFSUITE_SRCS)))
+
+# Training tool sources
+TRAIN_SRCS = src/training_data_parser.c src/crf_trainer.c src/training_stubs.c tools/train_model.c
+TRAIN_OBJS = $(patsubst %.c,%.o,$(TRAIN_SRCS))
+
+# All objects for training tool
+ALL_OBJS = $(TRAIN_OBJS) $(CRFSUITE_OBJS)
+
+# Target
+TRAIN_TOOL = train_model
+
+.PHONY: training-tool clean-training
+
+training-tool: $(TRAIN_TOOL)
+
+$(TRAIN_TOOL): $(ALL_OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ -lm
+
+# Compile rules
+src/%.o: src/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+tools/%.o: tools/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+src/crfsuite/src/%.o: src/crfsuite/src/%.c
+	$(CC) $(CFLAGS) -c -o $@ $<
+
+clean-training:
+	rm -f $(TRAIN_OBJS) $(TRAIN_TOOL)
+	rm -f src/crfsuite/src/*.o

@@ -66,6 +66,9 @@ void add_feature(FeatureSet *fs, const char *name, float weight) {
  */
 void extract_token_features(TokenInfo *token, FeatureSet *features) {
   char feature_name[MAX_FEATURE_NAME_LEN];
+  char *lower_token;
+  char *p;
+  char *np_start;
 
   if (token == NULL || token->text == NULL)
     return;
@@ -75,9 +78,6 @@ void extract_token_features(TokenInfo *token, FeatureSet *features) {
   add_feature(features, feature_name, 1.0);
 
   /* Lowercased token & nopunc */
-  char *lower_token;
-  char *p;
-  char *np_start;
 
   lower_token = pstrdup(token->text);
   for (p = lower_token; *p; p++) {

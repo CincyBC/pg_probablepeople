@@ -48,8 +48,11 @@ TokenInfo *tokenize_name_string(const char *input, int *num_tokens) {
     }
 
     /* Clean up token (remove extra punctuation) */
-    char *clean_token = pstrdup(token);
-    int len = strlen(clean_token);
+    char *clean_token;
+    int len;
+
+    clean_token = pstrdup(token);
+    len = strlen(clean_token);
 
     /* Remove trailing punctuation except for meaningful ones */
     while (len > 0 &&
@@ -58,6 +61,10 @@ TokenInfo *tokenize_name_string(const char *input, int *num_tokens) {
           (strcmp(clean_token, "Jr.") == 0 || strcmp(clean_token, "Sr.") == 0 ||
            strcmp(clean_token, "Dr.") == 0 || strcmp(clean_token, "Mr.") == 0 ||
            strcmp(clean_token, "Ms.") == 0 ||
+           strcmp(clean_token, "Inc.") == 0 ||
+           strcmp(clean_token, "Corp.") == 0 ||
+           strcmp(clean_token, "Co.") == 0 ||
+           strcmp(clean_token, "Ltd.") == 0 ||
            strcmp(clean_token, "Esq.") == 0 ||
            strcmp(clean_token, "Mrs.") == 0)) {
         break; /* Keep meaningful dots */
@@ -330,8 +337,9 @@ bool cache_parse_result(const char *input_text, ParseResult *result) {
     return false;
   }
 
-  char *cache_enabled =
-      SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
+  char *cache_enabled;
+
+  cache_enabled = SPI_getvalue(SPI_tuptable->vals[0], SPI_tuptable->tupdesc, 1);
   if (strcmp(cache_enabled, "true") != 0) {
     SPI_finish();
     return false;
