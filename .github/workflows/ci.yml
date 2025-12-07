@@ -40,14 +40,18 @@ jobs:
           sudo -u postgres createuser -s $(whoami)
 
       - name: Build Extension
-        run: make
+        run: |
+          export PATH=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin:$PATH
+          make
 
       - name: Install Extension
-        run: sudo make install
+        run: |
+          export PATH=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin:$PATH
+          sudo -E make install
 
       - name: Run Regression Tests
         run: |
-          # Create regression database if it helps, but pg_regress creates its own 'contrib_regression'
+          export PATH=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin:$PATH
           make installcheck
 
       - name: Show Regression Diffs
