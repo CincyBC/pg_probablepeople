@@ -1,10 +1,19 @@
 EXTENSION = pg_probablepeople
 MODULE_big = pg_probablepeople
-DATA = pg_probablepeople--1.0.0.sql
-OBJS = pg_probablepeople.o crfsuite_wrapper.o
+DATA = pg_probablepeople--1.0.0.sql generic_learned_settings.crfsuite person_learned_settings.crfsuite company_learned_settings.crfsuite
 
-# Link against CRFSuite library
-SHLIB_LINK = -lcrfsuite
+CRFSUITE_SRCS = $(wildcard src/crfsuite/src/*.c)
+# Exclude training related files to avoid external dependencies (e.g. lbfgs) and reduce size
+CRFSUITE_EXCLUDE = %/train_arow.c %/train_averaged_perceptron.c %/train_l2sgd.c %/train_lbfgs.c %/train_passive_aggressive.c %/crfsuite_train.c
+CRFSUITE_OBJS = $(patsubst %.c,%.o,$(filter-out $(CRFSUITE_EXCLUDE), $(CRFSUITE_SRCS)))
+
+OBJS = src/pg_probablepeople.o src/crfsuite_wrapper.o src/feature_extractor.o src/name_parser.o $(CRFSUITE_OBJS)
+
+REGRESS = test_parsing
+REGRESS_OPTS = --inputdir=tests
+
+PG_CPPFLAGS += -Isrc/crfsuite/include -Isrc/crfsuite/src
+# SHLIB_LINK = -lcrfsuite # Linked statically via source inclusion
 PG_LDFLAGS += -L/usr/local/lib
 
 PG_CONFIG = pg_config
