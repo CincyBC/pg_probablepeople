@@ -23,8 +23,12 @@ static void print_usage(const char *prog) {
   printf("  -v, --verbose          Verbose output\n");
   printf("  -h, --help             Show this help\n");
   printf("\nExamples:\n");
-  printf("  %s name_data/person_labeled.xml -o person.crfsuite\n", prog);
-  printf("  %s -t generic -p person.xml -c company.xml -o generic.crfsuite\n",
+  printf("  %s name_data/person_labeled.xml -o "
+         "include/person_learned_settings.crfsuite\n",
+         prog);
+  printf("  %s -t generic -p name_data/person_labeled.xml -c "
+         "name_data/company_labeled.xml -o "
+         "include/generic_learned_settings.crfsuite\n",
          prog);
 }
 

@@ -1,6 +1,6 @@
 EXTENSION = pg_probablepeople
 MODULE_big = pg_probablepeople
-DATA = pg_probablepeople--1.0.0.sql generic_learned_settings.crfsuite person_learned_settings.crfsuite company_learned_settings.crfsuite
+DATA = sql/pg_probablepeople--1.0.0.sql include/generic_learned_settings.crfsuite include/person_learned_settings.crfsuite include/company_learned_settings.crfsuite
 
 CRFSUITE_SRCS = $(wildcard src/crfsuite/src/*.c)
 # Exclude training files that require external dependencies (lbfgs)

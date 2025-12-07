@@ -135,12 +135,12 @@ docker cp name_data/company_labeled.xml pg_probablepeople-db-1:/usr/src/pg_proba
 # 2. Build training tool and train the generic model
 docker exec pg_probablepeople-db-1 bash -c "cd /usr/src/pg_probablepeople && \
   make -f Makefile.training training-tool && \
-  ./train_model -t generic -p name_data/person_labeled.xml -c name_data/company_labeled.xml -o generic_learned_settings.crfsuite && \
+  ./train_model -t generic -p name_data/person_labeled.xml -c name_data/company_labeled.xml -o include/generic_learned_settings.crfsuite && \
   make install && \
   psql -U postgres -c 'DROP EXTENSION IF EXISTS pg_probablepeople CASCADE; CREATE EXTENSION pg_probablepeople;'"
 
 # 3. Copy trained model back to host (for version control)
-docker cp pg_probablepeople-db-1:/usr/src/pg_probablepeople/generic_learned_settings.crfsuite ./generic_learned_settings.crfsuite
+docker cp pg_probablepeople-db-1:/usr/src/pg_probablepeople/include/generic_learned_settings.crfsuite ./include/generic_learned_settings.crfsuite
 ```
 
 **Training Options:**
@@ -153,7 +153,7 @@ docker cp pg_probablepeople-db-1:/usr/src/pg_probablepeople/generic_learned_sett
 
 **Example: Train person-only model:**
 ```bash
-./train_model name_data/person_labeled.xml -o person_learned_settings.crfsuite
+./train_model name_data/person_labeled.xml -o include/person_learned_settings.crfsuite
 ```
 
 ### Workflow Summary

@@ -41,18 +41,15 @@ jobs:
 
       - name: Build Extension
         run: |
-          export PATH=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin:$PATH
-          make
+          make PG_CONFIG=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin/pg_config
 
       - name: Install Extension
         run: |
-          export PATH=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin:$PATH
-          sudo -E make install
+          sudo make install PG_CONFIG=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin/pg_config
 
       - name: Run Regression Tests
         run: |
-          export PATH=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin:$PATH
-          make installcheck
+          make installcheck PG_CONFIG=/usr/lib/postgresql/${{ matrix.postgres-version }}/bin/pg_config
 
       - name: Show Regression Diffs
         if: failure()
