@@ -81,11 +81,11 @@ SELECT token, label FROM parse_name('President Joe Biden');
 (3 rows)
 
 -- Test 9: Test corporate name
-SELECT token, label FROM parse_name('google inc.');
+SELECT token, label FROM parse_name('Google Inc.');
  token  |        label         
 --------+----------------------
- google | CorporationName
- inc    | CorporationLegalType
+ Google | CorporationName
+ Inc.   | CorporationLegalType
 (2 rows)
 
 -- Test 10: Test corporate name with suffix
