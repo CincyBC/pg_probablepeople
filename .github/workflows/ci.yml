@@ -1,0 +1,58 @@
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    name: Postgres ${{ matrix.postgres-version }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        postgres-version: [14, 15, 16, 17, 18]
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Install PostgreSQL
+        run: |
+          sudo sh -c 'echo "deb http://apt.postgresql.org/pub/repos/apt $(lsb_release -cs)-pgdg main" > /etc/apt/sources.list.d/pgdg.list'
+          wget --quiet -O - https://www.postgresql.org/media/keys/ACCC4CF8.asc | sudo apt-key add -
+          sudo apt-get update
+          sudo apt-get install -y postgresql-${{ matrix.postgres-version }} postgresql-server-dev-${{ matrix.postgres-version }} build-essential
+
+      - name: Start PostgreSQL
+        run: |
+          sudo systemctl start postgresql
+          # Ensure service is running and wait a moment
+          sudo systemctl status postgresql || true
+
+      - name: Create Test User
+        run: |
+          # Create a superuser named 'runner' (the default user in GHA) usually
+          # But for 'make installcheck' running locally, it connects as current user.
+          # We need to make the current system user a postgres superuser.
+          sudo -u postgres createuser -s $(whoami)
+
+      - name: Build Extension
+        run: make
+
+      - name: Install Extension
+        run: sudo make install
+
+      - name: Run Regression Tests
+        run: |
+          # Create regression database if it helps, but pg_regress creates its own 'contrib_regression'
+          make installcheck
+
+      - name: Show Regression Diffs
+        if: failure()
+        run: |
+          if [ -f regression.diffs ]; then
+            cat regression.diffs
+          fi
